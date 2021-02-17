@@ -2,7 +2,10 @@ package hex.glm;
 
 import hex.*;
 import hex.glm.GLMModel.GLMOutput;
-import hex.glm.GLMModel.GLMParameters.*;
+import hex.glm.GLMModel.GLMParameters.Family;
+import hex.glm.GLMModel.GLMParameters.Link;
+import hex.glm.GLMModel.GLMParameters.MissingValuesHandling;
+import hex.glm.GLMModel.GLMParameters.Solver;
 import hex.glm.GLMModel.GLMWeightsFun;
 import hex.glm.GLMModel.Submodel;
 import hex.glm.GLMTask.*;
@@ -41,11 +44,10 @@ import java.text.NumberFormat;
 import java.util.*;
 
 import static hex.ModelMetrics.calcVarImp;
-import static hex.glm.GLMModel.GLMParameters.GLMType.gam;
 import static hex.glm.GLMModel.GLMParameters;
 import static hex.glm.GLMModel.GLMParameters.CHECKPOINT_NON_MODIFIABLE_FIELDS;
+import static hex.glm.GLMModel.GLMParameters.GLMType.gam;
 import static hex.glm.GLMUtils.*;
-import static water.fvec.Vec.T_STR;
 
 /**
  * Created by tomasnykodym on 8/27/14.
@@ -243,11 +245,27 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
     private ArrayList<Double> _objectives = new ArrayList<>();
     private ArrayList<Double> _convergence = new ArrayList<>(); // HGLM: ratio of sum(eta0-eta.i)^2/sum(eta.i^2)
     private ArrayList<Double> _sumEtaiSquare = new ArrayList<>();  // HGLM: sum(eta.i^2)
+    private ArrayList<Double> _lambdas = new ArrayList<>();
+    private ArrayList<Integer> _lambdaIters = new ArrayList<>();
+    private ArrayList<Integer> _lambdaPredictors = new ArrayList<>();
+    private ArrayList<Double> _lambdaDevTrain = new ArrayList<>();
+    private ArrayList<Double> _lambdaDevTest;
+    private ArrayList<Double> _lambdaDevXval;
+    private ArrayList<Double> _lambdaDevXvalSE;
+    private ArrayList<Double> _alphas = new ArrayList<>();
     
     public ArrayList<Integer> getScoringIters() { return _scoringIters;}
     public ArrayList<Long> getScoringTimes() { return _scoringTimes;}
     public ArrayList<Double> getLikelihoods() { return _likelihoods;}
     public ArrayList<Double> getObjectives() { return _objectives;}
+
+    public ScoringHistory(boolean hasTest, boolean hasXval) {
+      if(hasTest || true)_lambdaDevTest = new ArrayList<>();
+      if(hasXval){
+        _lambdaDevXval = new ArrayList<>();
+        _lambdaDevXvalSE = new ArrayList<>();
+      }
+    }
     
     public synchronized void addIterationScore(int iter, double likelihood, double obj) {
       if (_scoringIters.size() > 0 && _scoringIters.get(_scoringIters.size() - 1) == iter)
@@ -579,7 +597,7 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
       if (_parms._lambda_search  &&_parms._nlambdas == -1)
           _parms._nlambdas = _parms._alpha[0] == 0?30:100; // fewer lambdas needed for ridge
       _lambdaSearchScoringHistory = new LambdaSearchScoringHistory(_parms._valid != null,_parms._nfolds > 1);
-      _scoringHistory = new ScoringHistory();
+      _scoringHistory = new ScoringHistory(_parms._valid != null,_parms._nfolds > 1);
       _train.bulkRollups(); // make sure we have all the rollups computed in parallel
       _t0 = System.currentTimeMillis();
       if ((_parms._lambda_search || !_parms._intercept || _parms._lambda == null || _parms._lambda[0] > 0) && !_parms._HGLM)
@@ -2139,7 +2157,7 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
         validScore.fillFrom(_model._output._validation_metrics);
       }
       
-      _model.addScoringInfo(_parms, nclasses(), t2);  // add to scoringInfo for early stopping
+      _model.addScoringInfo(_parms, nclasses(), t2, _state._iter);  // add to scoringInfo for early stopping
       _model.update(_job._key);
       if (_parms._HGLM)
         _model.generateSummaryHGLM(_parms._train,_state._iter);
@@ -2364,7 +2382,9 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
             }
           }
 
-          if (_parms._lambda_search && (_parms._score_each_iteration || timeSinceLastScoring() > _scoringInterval)) {
+          if ((_parms._lambda_search || _parms._generate_scoring_history)&& (_parms._score_each_iteration || 
+                  timeSinceLastScoring() > _scoringInterval || ((_parms._score_iteration_interval > 0) && 
+                  ((_state._iter % _parms._score_iteration_interval) == 0)))) {
             _model._output.setSubmodelIdx(_model._output._best_submodel_idx = submodelCount); // quick and easy way to set submodel parameters
             scoreAndUpdateModel(); // update partial results
           }
@@ -2474,7 +2494,9 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
           _state.updateState(beta,gginfo._likelihood);
         else
           _state.updateState(beta, gginfo);
-        if (!_parms._lambda_search)
+        if ((!_parms._lambda_search || _parms._generate_scoring_history) && (_parms._score_each_iteration || 
+                timeSinceLastScoring() > _scoringInterval || ((_parms._score_iteration_interval > 0) && 
+                ((_state._iter % _parms._score_iteration_interval) == 0))))
           updateProgress(true);
         boolean converged = !_earlyStopEnabled && _state.converged(); // GLM specific early stop.  Disabled if early stop is enabled
         if (converged) Log.info(LogMsg(_state.convergenceMsg));
@@ -2499,7 +2521,9 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
     public boolean progress(double [] beta, double likelihood) {
       _state._iter++;
       _state.updateState(beta,likelihood);
-      if(!_parms._lambda_search)
+      if((!_parms._lambda_search || _parms._generate_scoring_history) && (_parms._score_each_iteration || 
+              timeSinceLastScoring() > _scoringInterval || ((_parms._score_iteration_interval > 0) && 
+              ((_state._iter % _parms._score_iteration_interval) == 0))))
         updateProgress(true);
       boolean converged = !_earlyStopEnabled && _state.converged();
       if(converged) Log.info(LogMsg(_state.convergenceMsg));
@@ -2522,10 +2546,14 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
     }
     // update user visible progress
     protected void updateProgress(boolean canScore){
-      assert !_parms._lambda_search;
-      _scoringHistory.addIterationScore(_state._iter, _state.likelihood(), _state.objective());
+      assert !_parms._lambda_search || _parms._generate_scoring_history;
+      /*if (_parms._lambda_search)
+        _lambdaSearchScoringHistory.addLambdaScore();
+      else*/
+        _scoringHistory.addIterationScore(_state._iter, _state.likelihood(), _state.objective());
       _job.update(_workPerIteration,_state.toString());
-      if(canScore && (_parms._score_each_iteration || timeSinceLastScoring() > _scoringInterval)) {
+      if(canScore && (_parms._score_each_iteration || timeSinceLastScoring() > _scoringInterval ||
+              ((_parms._score_iteration_interval > 0) && ((_state._iter % _parms._score_iteration_interval) == 0)))) {
         _model.update(_state.expandBeta(_state.beta()), -1, -1, _state._iter);
         scoreAndUpdateModel();
         _earlyStop = updateEarlyStop();

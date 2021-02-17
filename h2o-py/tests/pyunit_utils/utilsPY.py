@@ -1642,6 +1642,10 @@ def assert_H2OTwoDimTable_equal_upto(table1, table2, col_header_list, tolerance=
                                    "{3}".format(val1, val2, cname, tolerance)
     print("******* Congrats!  Test passed. ")
 
+def assert_equal_scoring_history(model1, model2, col_compare_list, tolerance=1e-6):
+    scoring_hist1 = model1._model_json["output"]["scoring_history"]
+    scoring_hist2 = model2._model_json["output"]["scoring_history"]
+    assert_H2OTwoDimTable_equal_upto(scoring_hist1, scoring_hist2, col_compare_list, tolerance=tolerance)
 
 def assert_H2OTwoDimTable_equal(table1, table2, col_header_list, tolerance=1e-6, check_sign=False, check_all=True,
                                 num_per_dim=10):
