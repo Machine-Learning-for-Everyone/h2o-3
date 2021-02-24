@@ -38,17 +38,25 @@ def test_glm_scoring_history_multinomial():
     pyunit_utils.assert_equal_scoring_history(h2o_model_score_each, h2o_model, col_list_compare)
 
     print("Building model with score_each_iteration turned on and cross-validaton on.")
-    h2o_model_score_each_cv = glm(family="multinomial", score_each_iteration=True, nfolds = 2, fold_assignment="modulo")
-    h2o_model_score_each_cv.train(x=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], y="C11", training_frame=train,
-                               validation_frame=valid)
+    h2o_model_score_each_cv = glm(family="multinomial", score_each_iteration=True, nfolds = 2, seed=1234, 
+                                  fold_assignment="modulo")
+    h2o_model_score_each_cv.train(x=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], y="C11", training_frame=train, 
+                                  validation_frame=valid)
     print("Building model with score_interval=1 and cross-validation on.  Should generate same model as "
           "score_each_iteration and cv turned on.")
-    h2o_model_cv = glm(family="multinomial", score_iteration_interval=1, nfolds = 2, fold_assignment="modulo")
-    h2o_model_cv.train(x=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], y="C11", training_frame=train,
-                    validation_frame=valid)
+    h2o_model_cv = glm(family="multinomial", score_iteration_interval=1, nfolds = 2, fold_assignment="modulo", seed=1234)
+    h2o_model_cv.train(x=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], y="C11", training_frame=train, validation_frame=valid)
     # scoring history from h2o_model_score_each_cv and h2o_model_cv should be the same
     pyunit_utils.assert_equal_scoring_history(h2o_model_score_each_cv, h2o_model_cv, col_list_compare)
-
+    
+    # check if scoring_interval is set to 4, the output should be the same for every fourth iteration
+    print("Building model with score_interval=4 and cross-validation on.  Should generate same model as "
+          "other models and same scoring history at the correct iteration.")
+    h2o_model_cv_4th = glm(family="multinomial", score_iteration_interval=4, nfolds = 2, fold_assignment="modulo", 
+                           seed=1234)
+    h2o_model_cv_4th.train(x=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], y="C11", training_frame=train, validation_frame=valid)
+    pyunit_utils.assertEqualScoringHistoryIteration(h2o_model_cv, h2o_model_cv_4th, col_list_compare) 
+    
 if __name__ == "__main__":
     pyunit_utils.standalone_test(test_glm_scoring_history_multinomial)
 else:

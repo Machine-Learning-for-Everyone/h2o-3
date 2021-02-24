@@ -4358,6 +4358,32 @@ def extractNextCoeff(cs_norm, orderedCoeffNames, startVal):
         startVal[ind] = cs_norm[orderedCoeffNames[ind]]
     return startVal
 
+def assertEqualScoringHistoryIteration(model_long, model_short, col_list_compare, tolerance=1e-6):
+    scoring_history_long = model_long._model_json["output"]["scoring_history"]
+    scoring_history_short = model_short._model_json["output"]["scoring_history"]
+    cv_4th_len = len(scoring_history_short.cell_values)
+    cv_len = len(scoring_history_long.cell_values)
+    col_2D = scoring_history_short.col_header
+    iterInd = col_2D.index('iterations')
+    count = 0
+    for index in range(cv_4th_len):
+        iterInd4th = scoring_history_short.cell_values[index][iterInd]
+        iterInd = scoring_history_long.cell_values[count][iterInd]
+        while (iterInd4th > iterInd):
+            count = count+1
+            if count >= cv_len:
+                break
+            iterInd = scoring_history_long.cell_values[count][iterInd]
+
+        if (iterInd4th == iterInd):
+            for col_header in col_list_compare:
+                ind = col_2D.index(col_header)
+                assert abs(scoring_history_short.cell_values[index][ind]-scoring_history_long.cell_values[count][ind]) \
+                       < tolerance, "{0} expected: {1}, actual: {2}".format(col_header,
+                                                                        scoring_history_short.cell_values[index][ind],
+                                                                        scoring_history_long.cell_values[count][ind])
+
+
 def assertCoefEqual(regCoeff, coeff, coeffClassSet, tol=1e-6):
     for key in regCoeff:
         temp = key.split('_')
