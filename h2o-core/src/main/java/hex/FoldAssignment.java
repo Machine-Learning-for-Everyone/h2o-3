@@ -51,11 +51,7 @@ public class FoldAssignment extends Iced<FoldAssignment> {
     }
 
     static int[] inverseMapping(int[] foldMapping) {
-        int max = -1;
-        for (int foldIdx : foldMapping) {
-            if (foldIdx > max)
-                max = foldIdx;
-        }
+        int max = ArrayUtils.maxValue(foldMapping);
         final int[] idxToFoldNumber = new int[max + 1];
         Arrays.fill(idxToFoldNumber, -1);
         for (int i = 0; i < foldMapping.length; i++) {
