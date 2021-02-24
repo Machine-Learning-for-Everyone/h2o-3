@@ -32,9 +32,9 @@ public class FoldAssignment extends Iced<FoldAssignment> {
     }
     
     static FoldAssignment fromUserFoldSpecification(int N, Vec fold) {
-        if ( !fold.isCategorical() && 
-                (!fold.isInt() || 
-                        (!(fold.min() == 0 && fold.max() == N-1) && !(fold.min() == 1 && fold.max() == N)))) // Allow 0 to N-1, or 1 to N
+        if ( ! (fold.isCategorical() 
+                 || (fold.isInt()
+                      && ((fold.min() == 0 && fold.max() == N-1) || (fold.min() == 1 && fold.max() == N)))) ) // Allow 0 to N-1, or 1 to N
             throw new H2OIllegalArgumentException("Fold column must be either categorical or contiguous integers from 0..N-1 or 1..N");
 
         return new FoldAssignment(fold, foldMapping(fold), false);
